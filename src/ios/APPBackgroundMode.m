@@ -22,6 +22,7 @@
 #import "APPMethodMagic.h"
 #import "APPBackgroundMode.h"
 #import <Cordova/CDVAvailability.h>
+#import <BackgroundTasks/BackgroundTasks.h>
 
 @implementation APPBackgroundMode
 
@@ -54,6 +55,15 @@ NSString* const kAPPBackgroundEventDeactivate = @"deactivate";
     [self configureAudioPlayer];
     [self configureAudioSession];
     [self observeLifeCycle];
+    
+    // Register background task for iOS 13+
+    if (@available(iOS 13.0, *)) {
+        [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:@"com.backgroundmode.processing"
+                                                             usingQueue:nil
+                                                          launchHandler:^(__kindof BGTask * _Nonnull task) {
+            [self handleBackgroundTask:task];
+        }];
+    }
 }
 
 /**
@@ -94,6 +104,11 @@ NSString* const kAPPBackgroundEventDeactivate = @"deactivate";
 
     enabled = YES;
     [self execCallback:command];
+    
+    // Schedule background task for iOS 13+
+    if (@available(iOS 13.0, *)) {
+        [self scheduleNextBackgroundTask];
+    }
 }
 
 /**
@@ -108,6 +123,40 @@ NSString* const kAPPBackgroundEventDeactivate = @"deactivate";
     enabled = NO;
     [self stopKeepingAwake];
     [self execCallback:command];
+}
+
+#pragma mark -
+#pragma mark Background Task Handling
+
+/**
+ * Handle background task for iOS 13+
+ */
+- (void)handleBackgroundTask:(BGTask *)task API_AVAILABLE(ios(13.0)) {
+    // Schedule next background task
+    [self scheduleNextBackgroundTask];
+    
+    // Execute background work
+    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:1.0
+                                                    repeats:NO
+                                                      block:^(NSTimer * _Nonnull timer) {
+        [task setTaskCompletedWithSuccess:YES];
+    }];
+    [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
+}
+
+/**
+ * Schedule next background task for iOS 13+
+ */
+- (void)scheduleNextBackgroundTask API_AVAILABLE(ios(13.0)) {
+    BGAppRefreshTaskRequest *request = [[BGAppRefreshTaskRequest alloc] initWithIdentifier:@"com.backgroundmode.processing"];
+    request.earliestBeginDate = [NSDate dateWithTimeIntervalSinceNow:15 * 60];
+    
+    NSError *error = nil;
+    [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:&error];
+    
+    if (error) {
+        NSLog(@"Could not schedule background task: %@", error);
+    }
 }
 
 #pragma mark -
@@ -170,11 +219,17 @@ NSString* const kAPPBackgroundEventDeactivate = @"deactivate";
     // Don't activate the audio session yet
     [session setActive:NO error:NULL];
 
-    // Play music even in background and dont stop playing music
-    // even another app starts playing sound
-    [session setCategory:AVAudioSessionCategoryPlayback
+    // Configure for background audio with modern options
+    if (@available(iOS 10.0, *)) {
+        [session setCategory:AVAudioSessionCategoryPlayback
+                     mode:AVAudioSessionModeDefault
+                  options:AVAudioSessionCategoryOptionMixWithOthers
+                    error:NULL];
+    } else {
+        [session setCategory:AVAudioSessionCategoryPlayback
                  withOptions:AVAudioSessionCategoryOptionMixWithOthers
-                   error:NULL];
+                      error:NULL];
+    }
 
     // Active the audio session
     [session setActive:YES error:NULL];

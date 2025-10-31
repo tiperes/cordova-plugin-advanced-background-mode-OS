@@ -500,6 +500,23 @@ exports._pluginInitialize = function()
     this._isActive  = this._isActive || device.platform == 'browser';
 };
 
+/**
+ * Request notification permissions (Android 13+)
+ *
+ * @param [ Function ] success Callback on success
+ * @param [ Function ] error Callback on error
+ * 
+ * @return [ Void ]
+ */
+exports.requestPermissions = function(success, error) {
+    if (this._isAndroid) {
+        cordova.exec(success, error, 'BackgroundMode', 'requestPermissions', []);
+    } else {
+        // iOS doesn't need this
+        if (success) success();
+    }
+};
+
 // Called before 'deviceready' listener will be called
 channel.onCordovaReady.subscribe(function()
 {

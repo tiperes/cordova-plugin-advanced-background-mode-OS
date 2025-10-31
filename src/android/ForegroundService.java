@@ -1,8 +1,8 @@
 package de.einfachhans.BackgroundMode;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -15,204 +15,157 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
-import android.app.NotificationChannel;
 
 import org.json.JSONObject;
 
 import static android.os.PowerManager.PARTIAL_WAKE_LOCK;
 
-/**
- * Puts the service in a foreground state, where the system considers it to be
- * something the user is actively aware of and thus not a candidate for killing
- * when low on memory.
- */
 public class ForegroundService extends Service {
 
-    // Fixed ID for the 'foreground' notification
     public static final int NOTIFICATION_ID = -574543954;
-
-    // Default title of the background notification
-    private static final String NOTIFICATION_TITLE =
-            "App is running in background";
-
-    // Default text of the background notification
-    private static final String NOTIFICATION_TEXT =
-            "Doing heavy tasks.";
-
-    // Default icon of the background notification
+    private static final String CHANNEL_ID = "cordova_background_mode_channel";
+    private static final String NOTIFICATION_TITLE = "App is running in background";
+    private static final String NOTIFICATION_TEXT = "Doing heavy tasks.";
     private static final String NOTIFICATION_ICON = "icon";
 
-    // Binder given to clients
     private final IBinder binder = new ForegroundBinder();
-
-    // Partial wake lock to prevent the app from going to sleep when locked
     private PowerManager.WakeLock wakeLock;
 
-    /**
-     * Allow clients to call on to the service.
-     */
     @Override
     public IBinder onBind (Intent intent) {
         return binder;
     }
 
-    /**
-     * Class used for the client Binder.  Because we know this service always
-     * runs in the same process as its clients, we don't need to deal with IPC.
-     */
-    class ForegroundBinder extends Binder
-    {
-        ForegroundService getService()
-        {
-            // Return this instance of ForegroundService
-            // so clients can call public methods
+    class ForegroundBinder extends Binder {
+        ForegroundService getService() {
             return ForegroundService.this;
         }
     }
 
-    /**
-     * Put the service in a foreground state to prevent app from being killed
-     * by the OS.
-     */
     @Override
-    public void onCreate()
-    {
+    public void onCreate() {
         super.onCreate();
+        createNotificationChannel();
         keepAwake();
     }
 
-    /**
-     * No need to run headless on destroy.
-     */
     @Override
-    public void onDestroy()
-    {
+    public void onDestroy() {
         super.onDestroy();
         sleepWell();
     }
 
-    /**
-     * Prevent Android from stopping the background service automatically.
-     */
     @Override
     public int onStartCommand (Intent intent, int flags, int startId) {
         return START_STICKY;
     }
 
     /**
-     * Put the service in a foreground state to prevent app from being killed
-     * by the OS.
+     * Create notification channel for Android 8.0+
      */
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            CharSequence name = "Background Service";
+            String description = "Keeps app running in background";
+            int importance = NotificationManager.IMPORTANCE_LOW;
+            
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, name, importance);
+            channel.setDescription(description);
+            channel.setShowBadge(false);
+            channel.setSound(null, null);
+            
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+            }
+        }
+    }
+
     @SuppressLint("WakelockTimeout")
-    private void keepAwake()
-    {
+    private void keepAwake() {
         JSONObject settings = BackgroundMode.getSettings();
-        boolean isSilent    = settings.optBoolean("silent", false);
+        boolean isSilent = settings.optBoolean("silent", false);
 
         if (!isSilent) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, makeNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE);
+            Notification notification = makeNotification();
+            
+            // Android 14+ with foreground service type
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, 
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, 
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST);
             } else {
-                startForeground(NOTIFICATION_ID, makeNotification());
+                startForeground(NOTIFICATION_ID, notification);
             }
         }
 
-        PowerManager pm = (PowerManager)getSystemService(POWER_SERVICE);
-
-        wakeLock = pm.newWakeLock(
-                PARTIAL_WAKE_LOCK, "backgroundmode:wakelock");
-
-        wakeLock.acquire();
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null) {
+            wakeLock = pm.newWakeLock(PARTIAL_WAKE_LOCK, "backgroundmode:wakelock");
+            wakeLock.acquire();
+        }
     }
 
-    /**
-     * Stop background mode.
-     */
-    private void sleepWell()
-    {
+    private void sleepWell() {
         stopForeground(true);
         getNotificationManager().cancel(NOTIFICATION_ID);
 
-        if (wakeLock != null) {
+        if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
             wakeLock = null;
         }
     }
 
-    /**
-     * Create a notification as the visible part to be able to put the service
-     * in a foreground state by using the default settings.
-     */
-    private Notification makeNotification()
-    {
+    private Notification makeNotification() {
         return makeNotification(BackgroundMode.getSettings());
     }
 
-    /**
-     * Create a notification as the visible part to be able to put the service
-     * in a foreground state.
-     *
-     * @param settings The config settings
-     */
-    private Notification makeNotification (JSONObject settings)
-    {
-        // use channelid for Oreo and higher
-        String CHANNEL_ID = "cordova-plugin-background-mode-id";
-        if(Build.VERSION.SDK_INT >= 26){
-        // The user-visible name of the channel.
-        CharSequence name = "cordova-plugin-background-mode";
-        // The user-visible description of the channel.
-        String description = "cordova-plugin-background-moden notification";
-
-        int importance = NotificationManager.IMPORTANCE_LOW;
-
-        NotificationChannel mChannel = new NotificationChannel(CHANNEL_ID, name,importance);
-
-        // Configure the notification channel.
-        mChannel.setDescription(description);
-
-        getNotificationManager().createNotificationChannel(mChannel);
-        }
-        String title    = settings.optString("title", NOTIFICATION_TITLE);
-        String text     = settings.optString("text", NOTIFICATION_TEXT);
+    private Notification makeNotification(JSONObject settings) {
+        String title = settings.optString("title", NOTIFICATION_TITLE);
+        String text = settings.optString("text", NOTIFICATION_TEXT);
         boolean bigText = settings.optBoolean("bigText", false);
 
         Context context = getApplicationContext();
-        String pkgName  = context.getPackageName();
-        Intent intent   = context.getPackageManager()
-                .getLaunchIntentForPackage(pkgName);
+        String pkgName = context.getPackageName();
+        Intent intent = context.getPackageManager().getLaunchIntentForPackage(pkgName);
 
-        Notification.Builder notification = new Notification.Builder(context)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setOngoing(true)
-                .setSmallIcon(getIconResId(settings));
-
-        if(Build.VERSION.SDK_INT >= 26){
-                   notification.setChannelId(CHANNEL_ID);
+        Notification.Builder notification;
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notification = new Notification.Builder(context, CHANNEL_ID);
+        } else {
+            notification = new Notification.Builder(context);
         }
+
+        notification
+            .setContentTitle(title)
+            .setContentText(text)
+            .setOngoing(true)
+            .setSmallIcon(getIconResId(settings));
 
         if (settings.optBoolean("hidden", true)) {
             notification.setPriority(Notification.PRIORITY_MIN);
         }
 
         if (bigText || text.contains("\n")) {
-            notification.setStyle(
-                    new Notification.BigTextStyle().bigText(text));
+            notification.setStyle(new Notification.BigTextStyle().bigText(text));
         }
 
         setColor(notification, settings);
 
         if (intent != null && settings.optBoolean("resume")) {
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            // PendingIntent contentIntent = PendingIntent.getActivity(
-            //         context, NOTIFICATION_ID, intent,
-            //         PendingIntent.FLAG_UPDATE_CURRENT);
             
-            PendingIntent contentIntent = PendingIntent.getActivity( 
-                context, NOTIFICATION_ID, intent, 
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
-
+            // PendingIntent flags for Android 12+
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            
+            PendingIntent contentIntent = PendingIntent.getActivity(
+                context, NOTIFICATION_ID, intent, flags);
 
             notification.setContentIntent(contentIntent);
         }
@@ -220,13 +173,7 @@ public class ForegroundService extends Service {
         return notification.build();
     }
 
-    /**
-     * Update the notification.
-     *
-     * @param settings The config settings
-     */
-    protected void updateNotification (JSONObject settings)
-    {
+    protected void updateNotification(JSONObject settings) {
         boolean isSilent = settings.optBoolean("silent", false);
 
         if (isSilent) {
@@ -236,18 +183,10 @@ public class ForegroundService extends Service {
 
         Notification notification = makeNotification(settings);
         getNotificationManager().notify(NOTIFICATION_ID, notification);
-
     }
 
-    /**
-     * Retrieves the resource ID of the app icon.
-     *
-     * @param settings A JSON dict containing the icon name.
-     */
-    private int getIconResId (JSONObject settings)
-    {
+    private int getIconResId(JSONObject settings) {
         String icon = settings.optString("icon", NOTIFICATION_ICON);
-
         int resId = getIconResId(icon, "mipmap");
 
         if (resId == 0) {
@@ -257,19 +196,9 @@ public class ForegroundService extends Service {
         return resId;
     }
 
-    /**
-     * Retrieve resource id of the specified icon.
-     *
-     * @param icon The name of the icon.
-     * @param type The resource type where to look for.
-     *
-     * @return The resource id or 0 if not found.
-     */
-    private int getIconResId (String icon, String type)
-    {
-        Resources res  = getResources();
+    private int getIconResId(String icon, String type) {
+        Resources res = getResources();
         String pkgName = getPackageName();
-
         int resId = res.getIdentifier(icon, type, pkgName);
 
         if (resId == 0) {
@@ -279,35 +208,21 @@ public class ForegroundService extends Service {
         return resId;
     }
 
-    /**
-     * Set notification color if its supported by the SDK.
-     *
-     * @param notification A Notification.Builder instance
-     * @param settings A JSON dict containing the color definition (red: FF0000)
-     */
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-    private void setColor (Notification.Builder notification, JSONObject settings)
-    {
-
+    private void setColor(Notification.Builder notification, JSONObject settings) {
         String hex = settings.optString("color", null);
 
-        if (Build.VERSION.SDK_INT < 21 || hex == null)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || hex == null)
             return;
 
         try {
-            //int aRGB = Integer.parseInt(hex, 16) + 0xFF000000;
-            int aRGB = Color.parseColor(hex);
+            int aRGB = Color.parseColor("#" + hex.replaceAll("#", ""));
             notification.setColor(aRGB);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    /**
-     * Returns the shared notification service manager.
-     */
-    private NotificationManager getNotificationManager()
-    {
+    private NotificationManager getNotificationManager() {
         return (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
     }
 }

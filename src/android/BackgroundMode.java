@@ -1,10 +1,17 @@
 package de.einfachhans.BackgroundMode;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.IBinder;
+
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
@@ -26,6 +33,9 @@ public class BackgroundMode extends CordovaPlugin {
     // Plugin namespace
     private static final String JS_NAMESPACE = "cordova.plugins.backgroundMode";
 
+    // Permission request codes
+    private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 1001;
+
     // Flag indicates if the app is in background or foreground
     private boolean inBackground = false;
 
@@ -34,6 +44,9 @@ public class BackgroundMode extends CordovaPlugin {
 
     // Flag indicates if the service is bind
     private boolean isBind = false;
+
+    // Pending enable request
+    private boolean hasPendingEnable = false;
 
     // Default settings for the notification
     private static JSONObject defaultSettings = new JSONObject();
@@ -60,13 +73,6 @@ public class BackgroundMode extends CordovaPlugin {
 
     /**
      * Executes the request.
-     *
-     * @param action   The action to execute.
-     * @param args     The exec() arguments.
-     * @param callback The callback context used when
-     *                 calling back into JavaScript.
-     *
-     * @return Returning false results in a "MethodNotFound" error.
      */
     @Override
     public boolean execute (String action, JSONArray args,
@@ -78,22 +84,23 @@ public class BackgroundMode extends CordovaPlugin {
         {
             case "configure":
                 configure(args.optJSONObject(0), args.optBoolean(1));
-                PluginResult res = new PluginResult(Status.OK);
-                callback.sendPluginResult(res);
+                callback.success();
                 break;
             case "enable":
-                enableMode();
+                enableMode(callback);
                 break;
             case "disable":
                 disableMode();
+                callback.success();
+                break;
+            case "requestPermissions":
+                requestNotificationPermission(callback);
                 break;
             default:
                 validAction = false;
         }
 
-        if (validAction) {
-            callback.success();
-        } else {
+        if (!validAction) {
             callback.error("Invalid action: " + action);
         }
 
@@ -101,9 +108,58 @@ public class BackgroundMode extends CordovaPlugin {
     }
 
     /**
+     * Request notification permission for Android 13+
+     */
+    private void requestNotificationPermission(CallbackContext callback) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Activity activity = cordova.getActivity();
+            
+            if (ContextCompat.checkSelfPermission(activity, 
+                Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                
+                // Store callback for later
+                this.permissionCallback = callback;
+                
+                ActivityCompat.requestPermissions(activity,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    NOTIFICATION_PERMISSION_REQUEST_CODE);
+                return;
+            }
+        }
+        
+        callback.success();
+    }
+
+    private CallbackContext permissionCallback;
+
+    /**
+     * Handle permission request result
+     */
+    @Override
+    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
+            boolean granted = grantResults.length > 0 && 
+                            grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            
+            if (permissionCallback != null) {
+                if (granted) {
+                    permissionCallback.success();
+                } else {
+                    permissionCallback.error("Notification permission denied");
+                }
+                permissionCallback = null;
+            }
+            
+            // If there was a pending enable request, process it now
+            if (hasPendingEnable && granted) {
+                hasPendingEnable = false;
+                enableMode(null);
+            }
+        }
+    }
+
+    /**
      * Called when the system is about to start resuming a previous activity.
-     *
-     * @param multitasking Flag indicating if multitasking is turned on for app.
      */
     @Override
     public void onPause(boolean multitasking)
@@ -126,8 +182,6 @@ public class BackgroundMode extends CordovaPlugin {
 
     /**
      * Called when the activity will start interacting with the user.
-     *
-     * @param multitasking Flag indicating if multitasking is turned on for app.
      */
     @Override
     public void onResume (boolean multitasking)
@@ -149,12 +203,32 @@ public class BackgroundMode extends CordovaPlugin {
     /**
      * Enable the background mode.
      */
-    private void enableMode()
+    private void enableMode(CallbackContext callback)
     {
+        // Check for notification permission on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Activity activity = cordova.getActivity();
+            
+            if (ContextCompat.checkSelfPermission(activity,
+                Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                
+                hasPendingEnable = true;
+                
+                if (callback != null) {
+                    callback.error("Notification permission required. Call requestPermissions() first.");
+                }
+                return;
+            }
+        }
+
         isDisabled = false;
 
         if (inBackground) {
             startService();
+        }
+        
+        if (callback != null) {
+            callback.success();
         }
     }
 
@@ -169,9 +243,6 @@ public class BackgroundMode extends CordovaPlugin {
 
     /**
      * Update the default settings and configure the notification.
-     *
-     * @param settings The settings
-     * @param update A truthy value means to update the running service.
      */
     private void configure(JSONObject settings, boolean update)
     {
@@ -184,8 +255,6 @@ public class BackgroundMode extends CordovaPlugin {
 
     /**
      * Update the default settings for the notification.
-     *
-     * @param settings The new default settings
      */
     private void setDefaultSettings(JSONObject settings)
     {
@@ -201,8 +270,6 @@ public class BackgroundMode extends CordovaPlugin {
 
     /**
      * Update the notification.
-     *
-     * @param settings The config settings
      */
     private void updateNotification(JSONObject settings)
     {
@@ -212,8 +279,7 @@ public class BackgroundMode extends CordovaPlugin {
     }
 
     /**
-     * Bind the activity to a background service and put them into foreground
-     * state.
+     * Bind the activity to a background service and put them into foreground state.
      */
     private void startService()
     {
@@ -226,8 +292,15 @@ public class BackgroundMode extends CordovaPlugin {
 
         try {
             context.bindService(intent, connection, BIND_AUTO_CREATE);
+            
+            // For Android 14+, use startForeground with type
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+            
             fireEvent(Event.ACTIVATE, null);
-            context.startService(intent);
         } catch (Exception e) {
             fireEvent(Event.FAILURE, String.format("'%s'", e.getMessage()));
         }
@@ -236,8 +309,7 @@ public class BackgroundMode extends CordovaPlugin {
     }
 
     /**
-     * Bind the activity to a background service and put them into foreground
-     * state.
+     * Stop the background service.
      */
     private void stopService()
     {
@@ -247,17 +319,19 @@ public class BackgroundMode extends CordovaPlugin {
         if (!isBind) return;
 
         fireEvent(Event.DEACTIVATE, null);
-        context.unbindService(connection);
-        context.stopService(intent);
+        
+        try {
+            context.unbindService(connection);
+            context.stopService(intent);
+        } catch (Exception e) {
+            // Service might already be stopped
+        }
 
         isBind = false;
     }
 
     /**
-     * Fire vent with some parameters inside the web view.
-     *
-     * @param event The name of the event
-     * @param params Optional arguments for the event
+     * Fire event with some parameters inside the web view.
      */
     private void fireEvent (Event event, String params)
     {

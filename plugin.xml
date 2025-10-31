@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
         xmlns:android="http://schemas.android.com/apk/res/android"
         id="cordova-plugin-advanced-background-mode"
-        version="1.1.1">
+        version="2.0.0">
 
     <name>BackgroundMode</name>
     <description>Prevent apps from going to sleep in background.</description>
     <repo>https://github.com/EinfachHans/cordova-plugin-advanced-background-mode</repo>
-    <keywords>cordova, background, mode</keywords>
-    <license>Apache 2.0</license>
+    <keywords>cordova, background, mode, mabs, outsystems</keywords>
+    <license>Apache-2.0</license>
     <author>EinfachHans</author>
 
-    <!-- dependencies -->
-    <dependency id="cordova-plugin-device" />
-
-    <!-- cordova -->
+    <!-- MABS 11/12 Compatibility -->
     <engines>
-        <engine name="cordova" version=">=3.0.0" />
-        <engine name="android-sdk" version=">=16" />
+        <engine name="cordova" version=">=11.0.0" />
+        <engine name="cordova-android" version=">=11.0.0" />
+        <engine name="cordova-ios" version=">=6.2.0" />
     </engines>
+
+    <!-- dependencies -->
+    <dependency id="cordova-plugin-device" version=">=2.0.0" />
 
     <!-- js -->
     <js-module src="www/background-mode.js" name="BackgroundMode">
@@ -27,7 +27,7 @@
         <clobbers target="plugin.backgroundMode" />
     </js-module>
 
-    <!-- ios -->
+    <!-- iOS -->
     <platform name="ios">
         <config-file target="config.xml" parent="/*">
             <feature name="BackgroundMode">
@@ -36,10 +36,18 @@
             </feature>
         </config-file>
 
+        <!-- iOS Background Modes -->
         <config-file target="*-Info.plist" parent="UIBackgroundModes">
             <array>
+                <string>processing</string>
+                <string>fetch</string>
                 <string>audio</string>
             </array>
+        </config-file>
+        
+        <!-- Add privacy description -->
+        <config-file target="*-Info.plist" parent="NSBackgroundRefreshStatusDescription">
+            <string>App requires background refresh to maintain functionality</string>
         </config-file>
 
         <resource-file src="appbeep.wav" />
@@ -50,8 +58,12 @@
         <source-file src="src/ios/APPMethodMagic.m" />
     </platform>
 
-    <!-- android -->
+    <!-- Android -->
     <platform name="android">
+        
+        <!-- Android Preferences for MABS 11/12 -->
+        <preference name="AndroidXEnabled" value="true" />
+        
         <config-file target="res/xml/config.xml" parent="/*">
             <feature name="BackgroundMode">
                 <param name="android-package" value="de.einfachhans.BackgroundMode.BackgroundMode"/>
@@ -65,15 +77,30 @@
             <preference name="KeepRunning" value="true" />
         </config-file>
 
+        <!-- Service declaration for MABS 11/12 -->
         <config-file target="AndroidManifest.xml" parent="/manifest/application">
-            <service android:name="de.einfachhans.BackgroundMode.ForegroundService" android:foregroundServiceType="shortService" android:exported="false" />
+            <service 
+                android:name="de.einfachhans.BackgroundMode.ForegroundService" 
+                android:exported="false">
+            </service>
         </config-file>
 
+        <!-- Permissions for MABS 11/12 -->
         <config-file target="AndroidManifest.xml" parent="/manifest">
             <uses-permission android:name="android.permission.WAKE_LOCK" />
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-            <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" /> 
+            <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
         </config-file>
+
+        <!-- Framework version preferences for MABS -->
+        <framework src="src/android/build.gradle" custom="true" type="gradleReference" />
+        
+        <!-- Notification icons -->
+        <resource-file src="src/android/res/drawable/power.xml" target="res/drawable/power.xml"/>
+        <resource-file src="src/android/res/drawable-hdpi/power.png" target="res/drawable-hdpi/power.png"/>
+        <resource-file src="src/android/res/drawable-mdpi/power.png" target="res/drawable-mdpi/power.png"/>
+        <resource-file src="src/android/res/drawable-xhdpi/power.png" target="res/drawable-xhdpi/power.png"/>
+        <resource-file src="src/android/res/drawable-xxhdpi/power.png" target="res/drawable-xxhdpi/power.png"/>
 
         <source-file
             src="src/android/BackgroundMode.java"
@@ -88,7 +115,7 @@
             target-dir="src/de/einfachhans/BackgroundMode" />
     </platform>
 
-    <!-- browser -->
+    <!-- Browser -->
     <platform name="browser">
         <config-file target="config.xml" parent="/*">
             <feature name="BackgroundMode">
