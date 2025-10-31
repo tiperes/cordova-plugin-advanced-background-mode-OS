@@ -5,6 +5,9 @@
         id="cordova-plugin-advanced-background-mode"
         version="1.1.1">
 
+    <!-- Plugin variables: provide defaults required by some build systems (MABS/plugman) -->
+    <preference name="ANDROIDXENABLED" default="true" />
+
     <name>BackgroundMode</name>
     <description>Prevent apps from going to sleep in background.</description>
     <repo>https://github.com/EinfachHans/cordova-plugin-advanced-background-mode</repo>
