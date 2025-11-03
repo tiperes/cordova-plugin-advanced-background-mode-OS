@@ -92,7 +92,6 @@ public class ForegroundService extends Service {
             // Foreground Service Types (Android 12+)
             int fgsTypes =
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC |
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE |
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING;
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
