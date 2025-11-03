@@ -80,19 +80,30 @@
             <preference name="KeepRunning" value="true" />
         </config-file>
 
-        <!-- Service declaration for MABS 11/12 -->
+        <!-- Service declaration for MABS 11/12, with required foregroundServiceType -->
         <config-file target="AndroidManifest.xml" parent="/manifest/application">
             <service 
                 android:name="de.einfachhans.BackgroundMode.ForegroundService" 
-                android:exported="false">
+                android:exported="false"
+                android:enabled="true"
+                android:foregroundServiceType="dataSync|connectedDevice|remoteMessaging">
             </service>
         </config-file>
 
         <!-- Permissions for MABS 11/12 -->
         <config-file target="AndroidManifest.xml" parent="/manifest">
-            <uses-permission android:name="android.permission.WAKE_LOCK" />
-            <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+            <!-- Request permission to ignore battery optimizations -->
             <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+            <!-- JS while screen off -->
+            <uses-permission android:name="android.permission.WAKE_LOCK" />
+            <!-- FGS Type A -->
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+            <!-- long-running sync operations -->
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+            <!-- if you interact with scanners / hardware -->
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+            <!-- push/remote messaging to justify background messages (FCM) -->
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
         </config-file>
 
         <!-- Framework version preferences for MABS -->
