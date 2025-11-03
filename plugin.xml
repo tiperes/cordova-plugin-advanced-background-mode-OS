@@ -86,7 +86,7 @@
                 android:name="de.einfachhans.BackgroundMode.ForegroundService" 
                 android:exported="false"
                 android:enabled="true"
-                android:foregroundServiceType="dataSync|connectedDevice|remoteMessaging">
+                android:foregroundServiceType="dataSync|remoteMessaging">
             </service>
         </config-file>
 
@@ -100,8 +100,9 @@
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
             <!-- long-running sync operations -->
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-            <!-- if you interact with scanners / hardware -->
-            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+            <!-- if you need location services (also add "location" to android:foregroundServiceType in the service declaration)
+            <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+             -->
             <!-- push/remote messaging to justify background messages (FCM) -->
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
         </config-file>
